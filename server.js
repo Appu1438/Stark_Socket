@@ -12,8 +12,12 @@ const PORT = process.env.PORT || 3000;
 
 // Store driver locations
 let drivers = {};
-let userSockets = new Set();
+
+// Add driver with ID
+let users = new Set();
 let adminSockets = new Set();
+let driverSockets = new Map(); // store driver WebSocket connections
+let userSockets = new Map(); // store users WebSocket connections
 
 // ✅ Create ONE HTTP server and attach both Express + WebSocket
 const server = http.createServer(app);
@@ -26,8 +30,18 @@ wss.on("connection", (ws) => {
             console.log("Received message:", data);
 
             if (data.role === "user") {
-                userSockets.add(ws);
-                ws.on("close", () => userSockets.delete(ws));
+                // Always store in general set
+                users.add(ws);
+
+                // Optionally store in Map if userId exists
+                if (data.userId) {
+                    userSockets.set(data.userId, ws);
+                }
+
+                ws.on("close", () => {
+                    users.delete(ws);
+                    if (data.userId) userSockets.delete(data.userId);
+                });
             }
 
             if (data.role === "admin") {
@@ -46,6 +60,19 @@ wss.on("connection", (ws) => {
 
                 ws.on("close", () => adminSockets.delete(ws));
             }
+
+            if (data.role === "driver") {
+                const driverId = data.driver;
+
+                // Save socket connection for this driver
+                driverSockets.set(driverId, ws);
+
+                ws.on("close", () => {
+                    driverSockets.delete(driverId);
+                    delete drivers[driverId]; // optional: remove location
+                });
+            }
+
 
             if (data.type === "locationUpdate" && data.role === "driver") {
                 const driverId = data.driver;
@@ -82,7 +109,7 @@ wss.on("connection", (ws) => {
                 }
             }
 
-            if (data.type === "requestRide" && data.role === "user") {
+            if (data.type === "requestDrivers" && data.role === "user") {
                 const nearbyDrivers = findNearbyDrivers(data.latitude, data.longitude);
                 ws.send(
                     JSON.stringify({
@@ -98,6 +125,84 @@ wss.on("connection", (ws) => {
             if (data.type === "statusUpdate" && data.role === "driver") {
                 delete drivers[data.driver];
             }
+
+            //Ride Request
+            if (data.type === "rideRequest" && data.role === "user") {
+                const driverWs = driverSockets.get(data.driverId);
+                if (driverWs?.readyState === 1) {
+                    driverWs.send(JSON.stringify({ type: "rideRequest", rideRequest: data.rideRequest }));
+                }
+            }
+
+            // Accept
+            if (data.type === "rideAccepted" && data.role === "driver") {
+                const userWs = userSockets.get(data.rideData.user.id);
+                if (userWs?.readyState === 1) {
+                    userWs.send(JSON.stringify({ type: "rideAccepted", rideData: data.rideData }));
+                }
+            }
+
+            // Reject
+            if (data.type === "rideRejected" && data.role === "driver") {
+                const userWs = userSockets.get(data.userId);
+                if (userWs?.readyState === 1) {
+                    userWs.send(JSON.stringify({ type: "rideRejected", driverId: data.driverId }));
+                }
+            }
+
+            // When driver updates ride status
+            if (data.type === "rideStatusUpdate" && data.role === "driver") {
+                const userWs = userSockets.get(data.rideData.user.id);
+                const statusMessageMap = {
+                    Booked: "Your ride has been booked!",
+                    Processing: "Your driver is on the way to pick you up!",
+                    Ongoing: "Your ride has started! Have a safe journey.",
+                    Completed: "Your ride has been completed! Thank you.",
+                };
+                if (userWs?.readyState === 1) {
+                    userWs.send(
+                        JSON.stringify({
+                            type: "rideStatusUpdate",
+                            rideId: data.rideData.id,
+                            status: data.status,
+                            message: statusMessageMap[data.status] || "Ride status updated",
+
+                        })
+                    );
+                }
+            }
+
+
+            if (data.type === "requestDriver" && data.role === "user") {
+                const driverId = data.driverId;
+                const driverData = drivers[driverId];
+                const userWs = userSockets.get(data.userId);
+                console.log(driverData)
+                if (userWs?.readyState === 1) {
+
+                    if (driverData) {
+                        userWs.send(JSON.stringify({
+                            type: "driverLocation",
+                            drivers: [{
+                                id: driverId,
+                                current: driverData.current,
+                                heading: driverData.heading,
+                                previous: driverData.previous,
+                            }],
+                        }));
+                    } else {
+                        userWs.send(JSON.stringify({
+                            type: "driverLocation",
+                            drivers: [],
+                            message: "Driver not found",
+                        }));
+                    }
+                }
+            }
+
+
+
+
         } catch (error) {
             console.log("Failed to parse WebSocket message:", error);
         }
@@ -117,7 +222,7 @@ function broadcastDriverLocation(driverId, driverData) {
         ],
     });
 
-    userSockets.forEach((user) => {
+    users.forEach((user) => {
         if (user.readyState === 1) user.send(payload);
     });
 }
@@ -162,7 +267,7 @@ function findNearbyDrivers(userLat, userLon) {
                 { latitude: userLat, longitude: userLon },
                 curr
             );
-            return distance <= 5000;
+            return distance <= 10000;
         })
         .map(([id, driver]) => ({
             id,
