@@ -11,7 +11,39 @@ app.use(cors());
 const PORT = process.env.PORT || 3000;
 
 // Store driver locations
+// Base location from your message
+const baseLocation = { latitude: 9.6195688, longitude: 76.3542249 };
+
+// Dummy driver IDs
+const driverIds = [
+    "68d6649b0eb91696bb2f2d75",
+    "68d665d40eb91696bb2f2e07",
+    "68d91741bb017c3c189e433d", // the driver from your message
+];
+
+// Utility function to create a random nearby location
+function getNearbyLocation(base, offset = 0.01) {
+    return {
+        latitude: base.latitude + (Math.random() - 0.5) * offset,
+        longitude: base.longitude + (Math.random() - 0.5) * offset,
+    };
+}
+
+// Initialize drivers object
 let drivers = {};
+
+// Populate dummy data
+// driverIds.forEach((id) => {
+//     const current = getNearbyLocation(baseLocation, 0.01);
+//     const previous = getNearbyLocation(baseLocation, 0.01);
+
+//     drivers[id] = {
+//         current,
+//         previous,
+//     };
+// });
+
+console.log(drivers);
 
 // Add driver with ID
 let users = new Set();
@@ -156,7 +188,9 @@ wss.on("connection", (ws) => {
                 const statusMessageMap = {
                     Booked: "Your ride has been booked!",
                     Processing: "Your driver is on the way to pick you up!",
+                    Arrived: "Your driver is arrived on pickup location!",
                     Ongoing: "Your ride has started! Have a safe journey.",
+                    Reached: "Your ride has reached destination!",
                     Completed: "Your ride has been completed! Thank you.",
                 };
                 if (userWs?.readyState === 1) {
@@ -167,6 +201,18 @@ wss.on("connection", (ws) => {
                             status: data.status,
                             message: statusMessageMap[data.status] || "Ride status updated",
 
+                        })
+                    );
+                }
+            }
+            if (data.type === "rideStatusUpdate" && data.role === "user") {
+                const driverWs = driverSockets.get(data.rideData.driver.id);
+                if (driverWs?.readyState === 1) {
+                    driverWs.send(
+                        JSON.stringify({
+                            type: "rideStatusUpdate",
+                            rideId: data.rideData.id,
+                            status: data.status
                         })
                     );
                 }
