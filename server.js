@@ -309,6 +309,16 @@ function findNearbyDrivers(userLat, userLon) {
             const curr = driver?.current;
             if (!curr) return false;
 
+            // ❗ Prevent geolib crash if driver location is null
+            if (
+                curr.latitude === null || curr.longitude === null ||
+                typeof curr.latitude !== "number" ||
+                typeof curr.longitude !== "number"
+            ) {
+                return false; // ignore this driver for distance filter
+            }
+
+
             const distance = getDistance(
                 { latitude: userLat, longitude: userLon },
                 curr
