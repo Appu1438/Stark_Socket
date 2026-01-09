@@ -301,7 +301,7 @@ function findNearbyDrivers(userLat, userLon) {
 app.get("/", (req, res) => {
     res.status(200).json({
         success: true,
-        message: "API is working",
+        message: "Socket API is working",
     });
 });
 
