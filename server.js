@@ -21,6 +21,24 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
+
+    // 🔴 ADD CLOSE HANDLER HERE (ONCE)
+    ws.on("close", () => {
+        
+        if (ws.role === "user") {
+            users.delete(ws);
+            if (ws.userId) userSockets.delete(ws.userId);
+        }
+
+        if (ws.role === "driver") {
+            driverSockets.delete(ws.driverId);
+            delete drivers[ws.driverId];
+        }
+
+        if (ws.role === "admin") {
+            adminSockets.delete(ws);
+        }
+    });
     ws.on("message", (message) => {
         try {
             const data = JSON.parse(message);
@@ -34,11 +52,6 @@ wss.on("connection", (ws) => {
                 if (data.userId) {
                     userSockets.set(data.userId, ws);
                 }
-
-                ws.on("close", () => {
-                    users.delete(ws);
-                    if (data.userId) userSockets.delete(data.userId);
-                });
             }
 
             if (data.role === "admin") {
@@ -55,21 +68,14 @@ wss.on("connection", (ws) => {
                     })
                 );
 
-                ws.on("close", () => adminSockets.delete(ws));
             }
 
             if (data.role === "driver") {
                 const driverId = data.driver;
-
                 // Save socket connection for this driver
                 driverSockets.set(driverId, ws);
 
-                ws.on("close", () => {
-                    driverSockets.delete(driverId);
-                    delete drivers[driverId]; // optional: remove location
-                });
             }
-
 
             if (data.type === "locationUpdate" && data.role === "driver") {
                 const driverId = data.driver;
@@ -117,10 +123,6 @@ wss.on("connection", (ws) => {
                             : "No nearby drivers found",
                     })
                 );
-            }
-
-            if (data.type === "statusUpdate" && data.role === "driver") {
-                delete drivers[data.driver];
             }
 
             //Ride Request
