@@ -20,11 +20,44 @@ let userSockets = new Map(); // store users WebSocket connections
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+
+const crypto = require("crypto");
+
+function generateSocketId() {
+    return "sock_" + crypto.randomBytes(6).toString("hex");
+}
+
+function heartbeat() {
+    this.isAlive = true;
+}
+
+const interval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+        if (ws.isAlive === false) {
+            console.log(`💀 [SERVER] Terminating ${ws.socketId}`);
+            ws.terminate();
+            return
+        }
+
+        ws.isAlive = false;
+        ws.ping();
+
+        console.log(`💓 [SERVER] ping → ${ws.socketId}`);
+
+    });
+}, 30000); // every 30s
+
 wss.on("connection", (ws) => {
+
+    ws.isAlive = true;
+    ws.socketId = generateSocketId();
+    console.log(`🔗 [SERVER] new socket connected → ${ws.socketId}`);
+
+    ws.on("pong", heartbeat);
 
     // 🔴 ADD CLOSE HANDLER HERE (ONCE)
     ws.on("close", () => {
-        
+
         if (ws.role === "user") {
             users.delete(ws);
             if (ws.userId) userSockets.delete(ws.userId);
@@ -39,10 +72,18 @@ wss.on("connection", (ws) => {
             adminSockets.delete(ws);
         }
     });
+
     ws.on("message", (message) => {
         try {
+
             const data = JSON.parse(message);
             console.log("Received message:", data);
+
+            if (data.type === "ping") {
+                ws.isAlive = true;
+                console.log(`💓 [SERVER] pong ← ${ws.socketId}`);
+                return;
+            }
 
             if (data.role === "user") {
                 // Always store in general set
