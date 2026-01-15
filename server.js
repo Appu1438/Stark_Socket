@@ -29,12 +29,13 @@ function generateSocketId() {
 
 function heartbeat() {
     this.isAlive = true;
+    console.log(`🟦 [PROTO_PONG] ← ${this.socketId}`);
 }
 
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) {
-            console.log(`💀 [SERVER] Terminating ${ws.socketId}`);
+            console.log(`💀 [PROTO_TIMEOUT] Terminating ${ws.socketId}`);
             ws.terminate();
             return
         }
@@ -42,7 +43,7 @@ const interval = setInterval(() => {
         ws.isAlive = false;
         ws.ping();
 
-        console.log(`💓 [SERVER] ping → ${ws.socketId}`);
+        console.log(`💓 [PROTO_PING] → ${ws.socketId}`);
 
     });
 }, 30000); // every 30s
@@ -81,7 +82,7 @@ wss.on("connection", (ws) => {
 
             if (data.type === "ping") {
                 ws.isAlive = true;
-                console.log(`💓 [SERVER] pong ← ${ws.socketId}`);
+                console.log(`🟢 [APP_PONG] ← ${ws.socketId}`);
                 return;
             }
 
